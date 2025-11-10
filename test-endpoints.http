@@ -1,0 +1,34 @@
+### Health Check (Ruta Pública)
+GET http://localhost:3000
+
+### Registrar Usuario (Ruta Pública)
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+  "email": "juan@example.com",
+  "password": "password123",
+  "name": "Juan Pérez"
+}
+
+### Login (Ruta Pública)
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "juan@example.com",
+  "password": "password123"
+}
+
+### Obtener Perfil (Ruta Protegida)
+# Reemplaza el token con el que obtuviste del login
+GET http://localhost:3000/auth/profile
+Authorization: Bearer TU_TOKEN_AQUI
+
+### Listar Usuarios (Ruta Protegida)
+GET http://localhost:3000/users
+Authorization: Bearer TU_TOKEN_AQUI
+
+### Obtener Usuario por ID (Ruta Protegida)
+GET http://localhost:3000/users/1
+Authorization: Bearer TU_TOKEN_AQUI
