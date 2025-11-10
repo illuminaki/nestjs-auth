@@ -1,18 +1,18 @@
-# 🔐 NestJS Auth - Guía de Autenticación con JWT
+# NestJS Auth - Guía de Autenticación con JWT
 
 Aplicación de ejemplo para aprender autenticación en NestJS usando JWT, Guards y Decoradores personalizados.
 
-## 📚 ¿Qué aprenderás?
+## ¿Qué aprenderás?
 
-- ✅ Autenticación con JWT (JSON Web Tokens)
-- ✅ Guards para proteger rutas
-- ✅ Decoradores personalizados (`@Public()`, `@GetUser()`)
-- ✅ Validación de datos con class-validator
-- ✅ Hash de contraseñas con bcrypt
-- ✅ Passport.js con NestJS
-- ✅ Uso del CLI de NestJS
+- Autenticación con JWT (JSON Web Tokens)
+- Guards para proteger rutas
+- Decoradores personalizados (`@Public()`, `@GetUser()`)
+- Validación de datos con class-validator
+- Hash de contraseñas con bcrypt
+- Passport.js con NestJS
+- Uso del CLI de NestJS
 
-## 🚀 Inicio Rápido
+## Inicio Rápido
 
 ### 1. Instalar dependencias
 ```bash
@@ -31,12 +31,12 @@ npm run start:prod
 
 La aplicación estará disponible en `http://localhost:3000`
 
-## 📖 Documentación
+## Documentación
 
 - **[PLAN.md](./PLAN.md)** - Roadmap completo del proyecto
 - **[GUIA-PASO-A-PASO.md](./GUIA-PASO-A-PASO.md)** - Tutorial paso a paso para recrear esta app
 
-## 🔌 Endpoints
+## Endpoints
 
 ### Rutas Públicas (sin autenticación)
 ```
@@ -52,7 +52,7 @@ GET    /users               - Listar todos los usuarios
 GET    /users/:id           - Obtener usuario por ID
 ```
 
-## 🧪 Probar la API
+## Probar la API
 
 ### 1. Registrar un usuario
 ```bash
@@ -94,7 +94,7 @@ curl -X GET http://localhost:3000/auth/profile \
   -H "Authorization: Bearer TU_TOKEN_AQUI"
 ```
 
-## 🏗️ Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 src/
@@ -125,7 +125,7 @@ src/
 └── main.ts
 ```
 
-## 🔑 Conceptos Clave
+## Conceptos Clave
 
 ### JWT (JSON Web Token)
 Los tokens JWT son una forma segura de transmitir información entre partes. En esta app:
@@ -143,7 +143,7 @@ Los Guards determinan si una petición puede proceder o no:
 - `@Public()` - Marca una ruta como pública (sin autenticación)
 - `@GetUser()` - Extrae el usuario del request en rutas protegidas
 
-## 📦 Dependencias Principales
+## Dependencias Principales
 
 ```json
 {
@@ -156,7 +156,7 @@ Los Guards determinan si una petición puede proceder o no:
 }
 ```
 
-## 🛠️ Comandos del CLI de NestJS Usados
+## Comandos del CLI de NestJS Usados
 
 ```bash
 # Crear proyecto
@@ -171,9 +171,9 @@ nest generate service auth
 nest generate controller auth
 ```
 
-## 📝 Notas de Seguridad
+## Notas de Seguridad
 
-⚠️ **Esta es una aplicación de ejemplo para aprendizaje**
+**IMPORTANTE: Esta es una aplicación de ejemplo para aprendizaje**
 
 En producción deberías:
 - Usar variables de entorno para el JWT secret
@@ -183,6 +183,6 @@ En producción deberías:
 - Usar HTTPS
 - Implementar CORS apropiadamente
 
-## 📄 Licencia
+## Licencia
 
 MIT
