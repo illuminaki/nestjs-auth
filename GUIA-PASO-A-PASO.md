@@ -425,6 +425,25 @@ Beneficio: Si alguien envía datos inválidos, NestJS automáticamente rechazar�
 
 El Service contiene la lógica de negocio. Aquí manejaremos usuarios en memoria.
 
+### Teoría: ¿Qué es un Service en NestJS?
+
+Un **Service** es una clase que contiene la lógica de negocio de la aplicación. Sigue el patrón de diseño de **Separación de Responsabilidades**:
+
+- **Controller**: Maneja las peticiones HTTP y las respuestas
+- **Service**: Contiene la lógica de negocio y acceso a datos
+- **Entity**: Define la estructura de los datos
+
+**Ventajas de usar Services:**
+1. **Reutilización**: La misma lógica puede ser usada por múltiples controladores
+2. **Testabilidad**: Es más fácil hacer pruebas unitarias
+3. **Mantenibilidad**: El código está organizado y es más fácil de mantener
+4. **Inyección de dependencias**: NestJS gestiona automáticamente las instancias
+
+**El decorador @Injectable():**
+- Marca la clase como un "provider" que puede ser inyectado
+- Permite que NestJS gestione el ciclo de vida de la clase
+- Habilita la inyección de dependencias en el constructor
+
 Abre `src/users/users.service.ts` y reemplaza todo el contenido:
 
 ```typescript
@@ -434,51 +453,102 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
 import * as bcrypt from 'bcrypt';
 
+/**
+ * @Injectable() - Decorador que marca esta clase como un provider
+ * Permite que NestJS la inyecte en otros componentes
+ */
 @Injectable()
 export class UsersService {
-  // Simulamos una base de datos en memoria
+  /**
+   * Simulamos una base de datos en memoria
+   * En producción, esto sería reemplazado por una conexión a DB real
+   * private: Solo accesible dentro de esta clase
+   */
   private users: User[] = [];
+  
+  /**
+   * Contador para generar IDs únicos
+   * En una DB real, esto lo manejaría el motor de base de datos
+   */
   private currentId = 1;
 
+  /**
+   * Crea un nuevo usuario en el sistema
+   * @param createUserDto - Datos del usuario a crear (validados por class-validator)
+   * @returns Promise<User> - El usuario creado (sin la contraseña)
+   */
   async create(createUserDto: CreateUserDto): Promise<User> {
-    // Verificar si el email ya existe
+    // 1. Verificar si el email ya existe para evitar duplicados
+    // find() busca el primer elemento que cumpla la condición
     const existingUser = this.users.find(u => u.email === createUserDto.email);
+    
     if (existingUser) {
+      // ConflictException genera un error HTTP 409
+      // Indica que hay un conflicto con el estado actual del recurso
       throw new ConflictException('El email ya está registrado');
     }
 
-    // Hashear la contraseña
+    // 2. Hashear la contraseña usando bcrypt
+    // El segundo parámetro (10) es el "salt rounds" o factor de costo
+    // Más rounds = más seguro pero más lento (10 es un buen balance)
+    // bcrypt genera automáticamente un "salt" único para cada contraseña
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
-    // Crear el nuevo usuario
+    // 3. Crear el objeto del nuevo usuario
+    // Usamos el operador ++ para incrementar y asignar el ID
     const newUser: User = {
-      id: this.currentId++,
+      id: this.currentId++,        // ID auto-incrementado
       email: createUserDto.email,
-      password: hashedPassword,
+      password: hashedPassword,     // Guardamos el hash, NO la contraseña original
       name: createUserDto.name,
-      createdAt: new Date(),
+      createdAt: new Date(),        // Timestamp de creación
     };
 
+    // 4. Agregar el usuario al array (simula INSERT en DB)
     this.users.push(newUser);
+    
+    // 5. Retornar el usuario creado
     return newUser;
   }
 
+  /**
+   * Obtiene todos los usuarios del sistema
+   * @returns User[] - Array de usuarios sin contraseñas
+   */
   findAll(): User[] {
-    // Retornar usuarios sin la contraseña
+    // Usamos map() para transformar cada usuario
+    // Destructuring: { password, ...user } separa password del resto
+    // ...user (spread operator) crea un nuevo objeto con todas las propiedades excepto password
+    // Esto es crucial para la seguridad: NUNCA exponer contraseñas
     return this.users.map(({ password, ...user }) => user as User);
   }
 
+  /**
+   * Busca un usuario por su ID
+   * @param id - ID del usuario a buscar
+   * @returns User - Usuario encontrado (sin contraseña)
+   * @throws NotFoundException si el usuario no existe
+   */
   findOne(id: number): User {
     const user = this.users.find(u => u.id === id);
+    
     if (!user) {
+      // NotFoundException genera un error HTTP 404
+      // Indica que el recurso solicitado no existe
       throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
     }
     
-    // Retornar sin la contraseña
+    // Destructuring para remover la contraseña antes de retornar
     const { password, ...userWithoutPassword } = user;
     return userWithoutPassword as User;
   }
 
+  /**
+   * Busca un usuario por email (usado internamente para autenticación)
+   * @param email - Email del usuario
+   * @returns User | undefined - Usuario completo CON contraseña o undefined
+   * NOTA: Este método SÍ retorna la contraseña porque se usa para validar login
+   */
   findByEmail(email: string): User | undefined {
     return this.users.find(u => u.email === email);
   }
@@ -606,32 +676,79 @@ El registro requiere los mismos campos que crear un usuario, así que extendemos
 
 ## Paso 12: Implementar el Auth Service
 
+### Teoría: Autenticación vs Autorización
+
+Antes de implementar, es importante entender dos conceptos clave:
+
+**Autenticación (Authentication):**
+- **¿Quién eres?** - Verifica la identidad del usuario
+- Proceso: Login con email/password
+- Resultado: Token JWT que identifica al usuario
+
+**Autorización (Authorization):**
+- **¿Qué puedes hacer?** - Verifica los permisos del usuario
+- Proceso: Verificar roles, permisos, ownership
+- Resultado: Permitir o denegar acceso a recursos
+
+**Flujo completo de Auth:**
+```
+1. Usuario envía credenciales → Autenticación
+2. Sistema verifica credenciales → Validación
+3. Si es válido, genera token → Generación JWT
+4. Usuario usa token en requests → Identificación
+5. Sistema verifica permisos → Autorización
+6. Permite/Deniega acceso → Respuesta
+```
+
+**Responsabilidades del AuthService:**
+- Registrar nuevos usuarios
+- Validar credenciales en el login
+- Generar tokens JWT
+- Validar tokens existentes
+
 Abre `src/auth/auth.service.ts`:
 
 ```typescript
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
-import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
+  /**
+   * Constructor con inyección de dependencias
+   * NestJS automáticamente inyecta las instancias necesarias
+   * 
+   * @param usersService - Servicio para gestionar usuarios
+   * @param jwtService - Servicio para generar y validar tokens JWT
+   */
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
   ) {}
 
+  /**
+   * Registra un nuevo usuario en el sistema
+   * @param registerDto - Datos del usuario a registrar
+   * @returns Objeto con el usuario creado y su token JWT
+   */
   async register(registerDto: RegisterDto) {
-    // Crear el usuario (el hash de la contraseña se hace en UsersService)
+    // 1. Crear el usuario (el hash de la contraseña se hace en UsersService)
     const user = await this.usersService.create(registerDto);
 
-    // Generar el token JWT
+    // 2. Generar el token JWT
+    // El payload contiene información NO sensible que queremos en el token
+    // 'sub' (subject) es el estándar JWT para el ID del usuario
     const payload = { sub: user.id, email: user.email };
+    
+    // signAsync() firma el payload con la clave secreta y genera el token
     const access_token = await this.jwtService.signAsync(payload);
 
-    // Retornar el usuario sin la contraseña y el token
+    // 3. Retornar el usuario sin la contraseña y el token
+    // Usamos destructuring para separar password del resto
     const { password, ...userWithoutPassword } = user;
     return {
       user: userWithoutPassword,
@@ -639,26 +756,40 @@ export class AuthService {
     };
   }
 
+  /**
+   * Autentica un usuario existente
+   * @param loginDto - Credenciales del usuario (email y password)
+   * @returns Objeto con el usuario y su token JWT
+   * @throws UnauthorizedException si las credenciales son inválidas
+   */
   async login(loginDto: LoginDto) {
-    // Buscar el usuario por email
+    // 1. Buscar el usuario por email
+    // findByEmail retorna el usuario CON la contraseña (necesaria para validar)
     const user = await this.usersService.findByEmail(loginDto.email);
     
+    // 2. Verificar que el usuario existe
+    // Importante: NO revelamos si el email existe o no por seguridad
+    // Siempre usamos el mismo mensaje genérico
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // Verificar la contraseña
+    // 3. Verificar la contraseña usando bcrypt
+    // compare() compara la contraseña en texto plano con el hash
+    // Retorna true si coinciden, false si no
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
     
     if (!isPasswordValid) {
+      // Mismo mensaje que arriba - no revelamos qué está mal
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // Generar el token JWT
+    // 4. Generar el token JWT
+    // Mismo proceso que en register()
     const payload = { sub: user.id, email: user.email };
     const access_token = await this.jwtService.signAsync(payload);
 
-    // Retornar el usuario sin la contraseña y el token
+    // 5. Retornar el usuario sin la contraseña y el token
     const { password, ...userWithoutPassword } = user;
     return {
       user: userWithoutPassword,
@@ -666,6 +797,11 @@ export class AuthService {
     };
   }
 
+  /**
+   * Valida que un usuario existe (usado por JwtStrategy)
+   * @param userId - ID del usuario a validar
+   * @returns Usuario encontrado o lanza excepción
+   */
   async validateUser(userId: number) {
     return this.usersService.findOne(userId);
   }
@@ -708,6 +844,36 @@ Conceptos clave:
 
 La estrategia JWT es el corazón de la autenticación. Define CÓMO validar los tokens.
 
+### Teoría: Passport Strategies
+
+**¿Qué es Passport.js?**
+- Middleware de autenticación para Node.js
+- Soporta más de 500 estrategias (JWT, OAuth, Local, etc.)
+- Modular y fácil de integrar con NestJS
+
+**¿Qué es una Strategy?**
+Una estrategia define el **método de autenticación**:
+- **Local Strategy**: Usuario/contraseña tradicional
+- **JWT Strategy**: Tokens JWT
+- **OAuth Strategy**: Login con Google, Facebook, etc.
+
+**Flujo de JWT Strategy:**
+```
+1. Request llega con header: Authorization: Bearer <token>
+2. ExtractJwt extrae el token del header
+3. passport-jwt verifica la firma del token
+4. Si la firma es válida, decodifica el payload
+5. Llama al método validate() con el payload
+6. validate() puede hacer validaciones adicionales
+7. Lo que retorna validate() se añade a request.user
+8. El request continúa al controller
+```
+
+**Componentes clave:**
+- **PassportStrategy**: Clase base que extiende la estrategia de Passport
+- **ExtractJwt**: Utilidad para extraer el token de diferentes lugares
+- **validate()**: Método que se ejecuta después de verificar el token
+
 Crea la carpeta y archivo `src/auth/strategies/jwt.strategy.ts`:
 
 ```typescript
@@ -716,31 +882,116 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthService } from '../auth.service';
 
+/**
+ * JwtStrategy - Define cómo validar tokens JWT
+ * Extiende PassportStrategy con la estrategia de passport-jwt
+ */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  /**
+   * Constructor que configura la estrategia JWT
+   * @param authService - Servicio para validar usuarios
+   */
   constructor(private authService: AuthService) {
+    // super() llama al constructor de la clase padre (Strategy)
+    // Aquí configuramos CÓMO extraer y verificar el token
     super({
+      // jwtFromRequest: Define de dónde extraer el token
+      // fromAuthHeaderAsBearerToken() busca: "Authorization: Bearer <token>"
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      
+      // ignoreExpiration: Si es false, rechaza tokens expirados
+      // Si es true, acepta tokens expirados (NO recomendado)
       ignoreExpiration: false,
-      secretOrKey: 'MI_SUPER_SECRET_KEY', // En producción, usar variable de entorno
+      
+      // secretOrKey: Clave secreta para verificar la firma del token
+      // DEBE ser la misma que se usó para generar el token
+      // En producción: usar process.env.JWT_SECRET
+      secretOrKey: 'MI_SUPER_SECRET_KEY',
     });
   }
 
+  /**
+   * Método validate() - Se ejecuta SOLO si el token es válido
+   * 
+   * @param payload - Payload decodificado del token JWT
+   *                  Contiene: { sub: userId, email: userEmail, iat, exp }
+   * @returns Objeto que se añadirá a request.user
+   * @throws UnauthorizedException si el usuario no existe
+   * 
+   * IMPORTANTE: Este método se ejecuta DESPUÉS de que passport-jwt
+   * haya verificado que:
+   * 1. El token tiene una firma válida
+   * 2. El token no ha expirado
+   * 3. El token tiene el formato correcto
+   */
   async validate(payload: any) {
-    // Este método se ejecuta si el token es válido
-    // payload contiene la información que pusimos en el token (sub, email)
-    
+    // payload.sub contiene el ID del usuario (establecido en AuthService)
+    // Validamos que el usuario aún existe en la base de datos
+    // Esto es importante por si el usuario fue eliminado después de generar el token
     const user = await this.authService.validateUser(payload.sub);
     
     if (!user) {
+      // Si el usuario no existe, rechazamos el request
       throw new UnauthorizedException();
     }
 
-    // Lo que retornemos aquí se añade a request.user
-    return { userId: payload.sub, email: payload.email };
+    // Lo que retornemos aquí se añade automáticamente a request.user
+    // Podemos acceder a esto en los controllers con @GetUser() o @Req()
+    // Retornamos solo lo necesario (no toda la info del usuario)
+    return { 
+      userId: payload.sub,    // ID del usuario
+      email: payload.email    // Email del usuario
+    };
   }
 }
 ```
+
+### Explicación profunda del flujo:
+
+**1. Extracción del token:**
+```typescript
+jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken()
+```
+- Busca el header `Authorization`
+- Espera el formato: `Bearer eyJhbGc...`
+- Extrae solo el token (sin "Bearer ")
+
+**Otras opciones de extracción:**
+```typescript
+// Desde query parameter: ?token=xxx
+ExtractJwt.fromUrlQueryParameter('token')
+
+// Desde cookie
+ExtractJwt.fromExtractors([(req) => req.cookies?.jwt])
+
+// Desde body
+ExtractJwt.fromBodyField('token')
+```
+
+**2. Verificación de la firma:**
+```typescript
+secretOrKey: 'MI_SUPER_SECRET_KEY'
+```
+- Usa la misma clave que generó el token
+- Verifica que el token no fue alterado
+- Si la firma no coincide → rechaza automáticamente
+
+**3. Validación del payload:**
+```typescript
+async validate(payload: any)
+```
+- Solo se ejecuta si el token es válido
+- Aquí puedes agregar lógica adicional
+- Ejemplo: verificar que el usuario no está bloqueado
+
+**4. Población de request.user:**
+```typescript
+return { userId: payload.sub, email: payload.email };
+```
+- Este objeto se añade a `request.user`
+- Accesible en controllers y guards
+- Mantén solo datos necesarios (no sensibles)
 
 ¿Cómo funciona?
 
@@ -820,6 +1071,61 @@ secret: process.env.JWT_SECRET,
 
 Los Guards controlan el acceso a las rutas. Vamos a crear uno personalizado.
 
+### Teoría: Guards en NestJS
+
+**¿Qué es un Guard?**
+Un Guard es una clase que implementa la interfaz `CanActivate`. Su responsabilidad es determinar si una petición debe ser manejada por el route handler o no.
+
+**Características de los Guards:**
+- Se ejecutan **después** de los middlewares
+- Se ejecutan **antes** de los interceptors y pipes
+- Tienen acceso al `ExecutionContext`
+- Retornan `boolean` o `Promise<boolean>`
+- Si retornan `false` → Bloquean la petición (403 Forbidden)
+- Si retornan `true` → Permiten la petición
+
+**Orden de ejecución en NestJS:**
+```
+Request
+  ↓
+Middleware (express middleware)
+  ↓
+Guards (CanActivate)
+  ↓
+Interceptors (before)
+  ↓
+Pipes (validación y transformación)
+  ↓
+Route Handler (Controller method)
+  ↓
+Interceptors (after)
+  ↓
+Exception Filters
+  ↓
+Response
+```
+
+**Tipos de Guards:**
+1. **Authentication Guards**: Verifican identidad (¿quién eres?)
+2. **Authorization Guards**: Verifican permisos (¿qué puedes hacer?)
+3. **Rate Limiting Guards**: Limitan peticiones
+4. **Feature Flag Guards**: Habilitan/deshabilitan funcionalidades
+
+**ExecutionContext:**
+Proporciona información sobre el contexto de ejecución actual:
+```typescript
+context.switchToHttp().getRequest()  // Obtiene el request HTTP
+context.switchToHttp().getResponse() // Obtiene el response HTTP
+context.getHandler()                  // Obtiene el método del controller
+context.getClass()                    // Obtiene la clase del controller
+```
+
+**Reflector:**
+Permite leer metadata añadida con decoradores:
+```typescript
+const isPublic = this.reflector.get('isPublic', context.getHandler());
+```
+
 Crea `src/auth/guards/jwt-auth.guard.ts`:
 
 ```typescript
@@ -828,28 +1134,116 @@ import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
+/**
+ * JwtAuthGuard - Guard personalizado para autenticación JWT
+ * 
+ * Extiende AuthGuard('jwt') de @nestjs/passport que:
+ * 1. Extrae el token del request
+ * 2. Valida el token usando JwtStrategy
+ * 3. Añade el usuario a request.user
+ * 
+ * Añadimos funcionalidad extra:
+ * - Soporte para rutas públicas con @Public()
+ */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
+  /**
+   * Constructor
+   * @param reflector - Servicio para leer metadata de decoradores
+   */
   constructor(private reflector: Reflector) {
+    // super() llama al constructor de AuthGuard
     super();
   }
 
+  /**
+   * canActivate - Determina si la petición puede continuar
+   * 
+   * @param context - Contexto de ejecución con info del request
+   * @returns boolean | Promise<boolean> - true permite, false bloquea
+   * 
+   * Flujo:
+   * 1. Verifica si la ruta es pública
+   * 2. Si es pública → permite acceso sin token
+   * 3. Si no es pública → valida JWT con super.canActivate()
+   */
   canActivate(context: ExecutionContext) {
-    // Verificar si la ruta está marcada como pública
+    // 1. Leer metadata de la ruta para ver si es pública
+    // getAllAndOverride() busca en dos lugares:
+    //   - context.getHandler() → Metadata del método (@Get, @Post, etc.)
+    //   - context.getClass() → Metadata de la clase (@Controller)
+    // Si encuentra en el método, tiene prioridad sobre la clase
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
+      context.getHandler(),  // Método del controller
+      context.getClass(),    // Clase del controller
     ]);
 
-    // Si es pública, permitir acceso sin autenticación
+    // 2. Si la ruta está marcada como @Public(), permitir acceso
+    // No se requiere token JWT
     if (isPublic) {
       return true;
     }
 
-    // Si no es pública, ejecutar la validación JWT normal
+    // 3. Si NO es pública, ejecutar la validación JWT normal
+    // super.canActivate() hace:
+    //   - Extrae el token del header Authorization
+    //   - Verifica la firma del token
+    //   - Llama a JwtStrategy.validate()
+    //   - Añade el resultado a request.user
+    // Retorna true si todo es válido, lanza excepción si no
     return super.canActivate(context);
   }
 }
+```
+
+### Explicación detallada del Guard:
+
+**1. Extensión de AuthGuard:**
+```typescript
+extends AuthGuard('jwt')
+```
+- `AuthGuard` es una clase de `@nestjs/passport`
+- El parámetro `'jwt'` debe coincidir con el nombre de la estrategia
+- Hereda toda la lógica de validación JWT
+
+**2. Reflector.getAllAndOverride():**
+```typescript
+this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+  context.getHandler(),
+  context.getClass(),
+])
+```
+- Busca metadata en múltiples lugares
+- Prioriza el método sobre la clase
+- Permite decoradores a nivel de clase o método
+
+**Ejemplo de prioridad:**
+```typescript
+@Controller('users')
+@Public()  // Metadata de clase
+export class UsersController {
+  @Get()
+  @Public()  // Metadata de método (tiene prioridad)
+  findAll() {}
+}
+```
+
+**3. Lógica condicional:**
+```typescript
+if (isPublic) return true;
+return super.canActivate(context);
+```
+- **Rutas públicas**: Bypass completo de autenticación
+- **Rutas protegidas**: Validación JWT completa
+
+**4. ¿Qué hace super.canActivate()?**
+Internamente ejecuta:
+```
+1. Extrae token → ExtractJwt.fromAuthHeaderAsBearerToken()
+2. Verifica firma → jwt.verify(token, secret)
+3. Valida payload → JwtStrategy.validate(payload)
+4. Añade a request → request.user = resultado de validate()
+5. Retorna true si todo OK, lanza excepción si falla
 ```
 
 Qué hace este Guard:
