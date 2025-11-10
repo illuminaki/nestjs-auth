@@ -1,8 +1,192 @@
-# 📖 GUÍA PASO A PASO - NestJS Auth con JWT
+# GUÍA PASO A PASO - NestJS Auth con JWT
 
 Esta guía te llevará paso a paso para crear una aplicación NestJS completa con autenticación JWT, guards y decoradores personalizados.
 
-## 📋 Requisitos Previos
+---
+
+# FUNDAMENTOS TEÓRICOS
+
+## ¿Qué es JWT (JSON Web Token)?
+
+JWT es un estándar abierto (RFC 7519) que define una forma compacta y autónoma de transmitir información de manera segura entre partes como un objeto JSON. Esta información puede ser verificada y confiable porque está firmada digitalmente.
+
+### Estructura de un JWT
+
+Un JWT consta de tres partes separadas por puntos (.):
+
+```
+xxxxx.yyyyy.zzzzz
+```
+
+**1. Header (Encabezado)**
+Contiene el tipo de token (JWT) y el algoritmo de firma utilizado (HS256, RS256, etc.)
+
+```json
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+**2. Payload (Carga útil)**
+Contiene las "claims" (declaraciones) sobre la entidad (generalmente el usuario) y metadatos adicionales.
+
+```json
+{
+  "sub": "1234567890",
+  "email": "usuario@example.com",
+  "iat": 1516239022,
+  "exp": 1516242622
+}
+```
+
+**Claims estándar:**
+- `sub` (subject): Identificador del sujeto del token
+- `iat` (issued at): Timestamp de cuando se creó el token
+- `exp` (expiration): Timestamp de cuando expira el token
+- `iss` (issuer): Emisor del token
+- `aud` (audience): Audiencia del token
+
+**3. Signature (Firma)**
+Se crea tomando el header codificado, el payload codificado, una clave secreta y el algoritmo especificado en el header.
+
+```
+HMACSHA256(
+  base64UrlEncode(header) + "." + base64UrlEncode(payload),
+  secret
+)
+```
+
+### ¿Cómo funciona JWT en autenticación?
+
+**Flujo de autenticación:**
+
+1. **Login:** El usuario envía credenciales (email/password) al servidor
+2. **Validación:** El servidor verifica las credenciales contra la base de datos
+3. **Generación:** Si son válidas, el servidor genera un JWT firmado
+4. **Respuesta:** El servidor envía el JWT al cliente
+5. **Almacenamiento:** El cliente guarda el JWT (localStorage, sessionStorage, cookie)
+6. **Peticiones:** En cada petición, el cliente envía el JWT en el header Authorization
+7. **Verificación:** El servidor verifica la firma del JWT
+8. **Acceso:** Si es válido, el servidor procesa la petición
+
+```
+Cliente                                    Servidor
+   |                                          |
+   |  POST /auth/login                        |
+   |  { email, password }                     |
+   |----------------------------------------->|
+   |                                          | Verifica credenciales
+   |                                          | Genera JWT
+   |  { access_token: "xxx.yyy.zzz" }         |
+   |<-----------------------------------------|
+   |                                          |
+   | Guarda el token                          |
+   |                                          |
+   |  GET /auth/profile                       |
+   |  Authorization: Bearer xxx.yyy.zzz       |
+   |----------------------------------------->|
+   |                                          | Verifica firma del JWT
+   |                                          | Extrae información del payload
+   |  { user: {...} }                         |
+   |<-----------------------------------------|
+```
+
+### Ventajas de JWT
+
+**1. Stateless (Sin estado)**
+- El servidor no necesita almacenar sesiones
+- Toda la información está en el token
+- Fácil de escalar horizontalmente
+
+**2. Portabilidad**
+- Funciona en cualquier plataforma (web, móvil, IoT)
+- Se puede usar entre diferentes dominios
+- Compatible con arquitecturas de microservicios
+
+**3. Seguridad**
+- Firmado digitalmente (no puede ser alterado)
+- Puede ser encriptado para mayor seguridad
+- Expira automáticamente
+
+**4. Performance**
+- No requiere consultas a base de datos para validar
+- Verificación rápida mediante firma criptográfica
+- Reduce carga en el servidor
+
+### Desventajas de JWT
+
+**1. No se puede invalidar antes de expirar**
+- Una vez emitido, es válido hasta su expiración
+- Solución: Usar tokens de corta duración + refresh tokens
+- Alternativa: Mantener una lista negra de tokens (pierde el beneficio stateless)
+
+**2. Tamaño**
+- Más grande que un session ID tradicional
+- Se envía en cada petición
+- Puede afectar el ancho de banda
+
+**3. Información expuesta**
+- El payload es decodificable (Base64)
+- No almacenar información sensible
+- Solo información pública o identificadores
+
+### Mejores prácticas de seguridad
+
+**1. Usar HTTPS**
+- Siempre transmitir tokens sobre conexiones seguras
+- Previene ataques de man-in-the-middle
+
+**2. Tiempo de expiración corto**
+- Access tokens: 15 minutos - 1 hora
+- Refresh tokens: 7 días - 30 días
+
+**3. Almacenamiento seguro**
+- Preferir httpOnly cookies sobre localStorage
+- Proteger contra XSS (Cross-Site Scripting)
+- Implementar CSRF protection si se usan cookies
+
+**4. Validar siempre**
+- Verificar la firma en cada petición
+- Validar el tiempo de expiración
+- Verificar los claims (issuer, audience)
+
+**5. No almacenar información sensible**
+- Solo IDs y datos públicos en el payload
+- Nunca contraseñas o información confidencial
+- Recordar que el payload es decodificable
+
+### JWT vs Sesiones tradicionales
+
+| Aspecto | JWT | Sesiones |
+|---------|-----|----------|
+| Almacenamiento servidor | No requiere | Requiere (memoria/Redis/DB) |
+| Escalabilidad | Excelente | Requiere sticky sessions |
+| Invalidación | Difícil | Inmediata |
+| Tamaño | Mayor (~200-500 bytes) | Menor (~32 bytes session ID) |
+| Stateless | Sí | No |
+| Microservicios | Ideal | Complejo |
+| Overhead red | Mayor | Menor |
+
+### ¿Cuándo usar JWT?
+
+**Casos ideales:**
+- APIs RESTful stateless
+- Aplicaciones móviles
+- Single Page Applications (SPA)
+- Arquitecturas de microservicios
+- Autenticación entre dominios
+- Sistemas distribuidos
+
+**Casos donde considerar alternativas:**
+- Aplicaciones web tradicionales con sesiones
+- Cuando se requiere invalidación inmediata
+- Sistemas con requisitos de seguridad muy estrictos
+- Aplicaciones con ancho de banda limitado
+
+---
+
+## Requisitos Previos
 
 Antes de comenzar, asegúrate de tener instalado:
 - Node.js (v18 o superior)
@@ -12,16 +196,16 @@ Antes de comenzar, asegúrate de tener instalado:
 
 ---
 
-## 🎯 ¿Qué vamos a construir?
+## ¿Qué vamos a construir?
 
 Una API REST con:
-- ✅ Sistema de registro y login
-- ✅ Autenticación con JWT
-- ✅ Rutas públicas y protegidas
-- ✅ Guards personalizados
-- ✅ Decoradores personalizados
-- ✅ Validación de datos
-- ✅ Hash de contraseñas
+- Sistema de registro y login
+- Autenticación con JWT
+- Rutas públicas y protegidas
+- Guards personalizados
+- Decoradores personalizados
+- Validación de datos
+- Hash de contraseñas
 
 ---
 
@@ -35,7 +219,7 @@ El CLI de NestJS nos ayudará a generar código y estructurar el proyecto correc
 npm install -g @nestjs/cli
 ```
 
-**¿Por qué?** El CLI de NestJS automatiza la creación de módulos, controladores, servicios y más, siguiendo las mejores prácticas.
+Por qué: El CLI de NestJS automatiza la creación de módulos, controladores, servicios y más, siguiendo las mejores prácticas.
 
 **Verificar instalación:**
 ```bash
@@ -57,7 +241,7 @@ nest new nestjs-auth --package-manager npm
 cd nestjs-auth
 ```
 
-**¿Qué hace este comando?**
+Qué hace este comando:
 - Crea la estructura base del proyecto
 - Instala todas las dependencias necesarias
 - Configura TypeScript
@@ -92,7 +276,7 @@ npm install @nestjs/jwt @nestjs/passport passport passport-jwt bcrypt class-vali
 npm install -D @types/passport-jwt @types/bcrypt
 ```
 
-**¿Qué hace cada paquete?**
+Qué hace cada paquete:
 
 | Paquete | Propósito |
 |---------|-----------|
@@ -114,12 +298,12 @@ Antes de continuar, vamos a verificar que todo está bien instalado.
 npm run start:dev
 ```
 
-**¿Qué hace este comando?**
+Qué hace este comando:
 - Compila el código TypeScript
 - Inicia el servidor en modo desarrollo
 - Habilita hot-reload (recarga automática al hacer cambios)
 
-**Deberías ver:**
+Deberías ver:
 ```
 [Nest] 12345  - LOG [NestFactory] Starting Nest application...
 [Nest] 12345  - LOG [InstanceLoader] AppModule dependencies initialized
@@ -135,7 +319,7 @@ curl http://localhost:3000
 # Respuesta: Hello World!
 ```
 
-✅ **¡Perfecto!** El proyecto base está funcionando.
+Perfecto! El proyecto base está funcionando.
 
 ---
 
@@ -149,12 +333,12 @@ Vamos a usar el CLI de NestJS para generar un módulo completo de usuarios con C
 nest generate resource users
 ```
 
-**El CLI te preguntará:**
+El CLI te preguntará:
 
-1. **¿Qué capa de transporte usas?** → Selecciona `REST API`
-2. **¿Generar puntos de entrada CRUD?** → Selecciona `Yes`
+1. ¿Qué capa de transporte usas? → Selecciona `REST API`
+2. ¿Generar puntos de entrada CRUD? → Selecciona `Yes`
 
-**¿Qué genera este comando?**
+Qué genera este comando:
 ```
 CREATE src/users/users.controller.ts
 CREATE src/users/users.module.ts
@@ -165,7 +349,7 @@ CREATE src/users/entities/user.entity.ts
 UPDATE src/app.module.ts
 ```
 
-**¿Por qué usar el CLI?**
+Por qué usar el CLI:
 - Genera código siguiendo las convenciones de NestJS
 - Crea la estructura de carpetas correcta
 - Actualiza automáticamente el módulo principal
@@ -187,7 +371,7 @@ export class User {
 }
 ```
 
-**¿Qué es una Entity?**
+Qué es una Entity:
 Una Entity representa la estructura de datos de nuestro modelo. En este caso, un usuario tiene:
 - `id`: Identificador único
 - `email`: Correo electrónico (será único)
@@ -224,7 +408,7 @@ export class CreateUserDto {
 }
 ```
 
-**¿Qué hacen estos decoradores?**
+Qué hacen estos decoradores:
 
 | Decorador | Función |
 |-----------|---------|
@@ -233,7 +417,7 @@ export class CreateUserDto {
 | `@IsNotEmpty()` | Valida que no esté vacío |
 | `@MinLength(6)` | Valida longitud mínima |
 
-**Beneficio:** Si alguien envía datos inválidos, NestJS automáticamente rechazará la petición con un mensaje de error claro.
+Beneficio: Si alguien envía datos inválidos, NestJS automáticamente rechazará la petición con un mensaje de error claro.
 
 ---
 
@@ -359,7 +543,7 @@ import { UsersController } from './users.controller';
 export class UsersModule {}
 ```
 
-**¿Por qué exportar?**
+¿Por qué exportar?
 El módulo `AuthModule` necesitará acceder a `UsersService` para buscar usuarios por email durante el login.
 
 ---
@@ -376,7 +560,7 @@ nest generate service auth
 nest generate controller auth
 ```
 
-**¿Por qué 3 comandos separados?**
+¿Por qué 3 comandos separados?
 A diferencia de `users`, no queremos un CRUD completo. Solo necesitamos:
 - `AuthModule`: Configuración del módulo
 - `AuthService`: Lógica de autenticación
@@ -415,7 +599,7 @@ import { CreateUserDto } from '../../users/dto/create-user.dto';
 export class RegisterDto extends CreateUserDto {}
 ```
 
-**¿Por qué reutilizar?**
+¿Por qué reutilizar?
 El registro requiere los mismos campos que crear un usuario, así que extendemos el DTO existente. Esto sigue el principio DRY (Don't Repeat Yourself).
 
 ---
@@ -488,7 +672,7 @@ export class AuthService {
 }
 ```
 
-**Conceptos clave:**
+Conceptos clave:
 
 1. **Inyección de dependencias:**
    ```typescript
@@ -558,7 +742,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 }
 ```
 
-**¿Cómo funciona?**
+¿Cómo funciona?
 
 1. **Configuración en el constructor:**
    - `jwtFromRequest`: Extrae el token del header `Authorization: Bearer <token>`
@@ -571,7 +755,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    - Puede hacer validaciones adicionales (ej: verificar que el usuario existe)
    - Lo que retorna se añade a `request.user`
 
-**Flujo completo:**
+Flujo completo:
 ```
 Request → Guard → Strategy → validate() → request.user → Controller
 ```
@@ -608,7 +792,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 export class AuthModule {}
 ```
 
-**Explicación de imports:**
+Explicación de imports:
 
 1. **UsersModule:**
    - Necesitamos acceso a `UsersService`
@@ -622,7 +806,7 @@ export class AuthModule {}
    - `signOptions.expiresIn`: Tiempo de vida del token
    - Opciones: `'1h'`, `'7d'`, `'30m'`, etc.
 
-**⚠️ Importante en Producción:**
+IMPORTANTE en Producción:
 ```typescript
 // Usar variables de entorno
 secret: process.env.JWT_SECRET,
@@ -668,7 +852,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 }
 ```
 
-**¿Qué hace este Guard?**
+Qué hace este Guard:
 
 1. **Extiende `AuthGuard('jwt')`:**
    - Hereda la funcionalidad de validación JWT de Passport
@@ -682,7 +866,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
    - Si la ruta es pública → permite acceso
    - Si no es pública → valida el JWT
 
-**Flujo de ejecución:**
+Flujo de ejecución:
 ```
 Request
   ↓
@@ -715,7 +899,7 @@ export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 ```
 
-**¿Cómo funciona?**
+¿Cómo funciona?
 
 1. **SetMetadata:**
    - Añade metadata a la ruta
@@ -758,7 +942,7 @@ export const GetUser = createParamDecorator(
 );
 ```
 
-**¿Cómo funciona?**
+¿Cómo funciona?
 
 1. **createParamDecorator:**
    - Crea un decorador de parámetro personalizado
@@ -779,7 +963,7 @@ export const GetUser = createParamDecorator(
    }
    ```
 
-**Ventajas:**
+Ventajas:
 - Código más limpio y expresivo
 - Reutilizable en cualquier controlador
 - Type-safe (puedes tipar el usuario)
@@ -840,7 +1024,7 @@ export class AuthController {
 }
 ```
 
-**Detalles importantes:**
+Detalles importantes:
 
 1. **@Public() en register y login:**
    - Estas rutas NO requieren autenticación
@@ -889,13 +1073,13 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 export class AppModule {}
 ```
 
-**¿Qué significa "globalmente"?**
+Qué significa "globalmente":
 
 - TODAS las rutas requieren autenticación por defecto
 - Para hacer una ruta pública, usamos `@Public()`
 - Es más seguro: "deny by default, allow explicitly"
 
-**Alternativa (NO recomendada):**
+Alternativa (NO recomendada):
 ```typescript
 // Aplicar guard ruta por ruta
 @UseGuards(JwtAuthGuard)
@@ -903,7 +1087,7 @@ export class AppModule {}
 protectedRoute() { ... }
 ```
 
-**Problema:** Es fácil olvidar proteger una ruta sensible.
+Problema: Es fácil olvidar proteger una ruta sensible.
 
 ---
 
@@ -960,12 +1144,12 @@ async function bootstrap() {
   );
 
   await app.listen(process.env.PORT ?? 3000);
-  console.log('🚀 Aplicación corriendo en http://localhost:3000');
+  console.log('Aplicación corriendo en http://localhost:3000');
 }
 bootstrap();
 ```
 
-**Opciones del ValidationPipe:**
+Opciones del ValidationPipe:
 
 | Opción | Efecto |
 |--------|--------|
@@ -973,7 +1157,7 @@ bootstrap();
 | `forbidNonWhitelisted: true` | Rechaza requests con propiedades extras |
 | `transform: true` | Convierte tipos automáticamente (string → number) |
 
-**Ejemplo:**
+Ejemplo:
 ```typescript
 // DTO espera: { email, password, name }
 // Request envía: { email, password, name, hacker: true }
@@ -998,9 +1182,9 @@ npm run build
 npm run start:dev
 ```
 
-**Deberías ver:**
+Deberías ver:
 ```
-🚀 Aplicación corriendo en http://localhost:3000
+Aplicación corriendo en http://localhost:3000
 ```
 
 ---
@@ -1019,7 +1203,7 @@ curl -X POST http://localhost:3000/auth/register \
   }'
 ```
 
-**Respuesta esperada:**
+Respuesta esperada:
 ```json
 {
   "user": {
@@ -1032,11 +1216,11 @@ curl -X POST http://localhost:3000/auth/register \
 }
 ```
 
-**✅ Verificaciones:**
-- ✓ El usuario se creó con ID 1
-- ✓ La contraseña NO aparece en la respuesta
-- ✓ Se generó un token JWT
-- ✓ El token es un string largo codificado en Base64
+Verificaciones:
+- El usuario se creó correctamente
+- La contraseña está hasheada (no es el texto plano)
+- El ID se auto-incrementa
+- El token JWT se generó correctamente
 
 ---
 
@@ -1102,7 +1286,7 @@ curl -X GET http://localhost:3000/auth/profile
 }
 ```
 
-**✅ Perfecto!** El Guard está funcionando y rechaza acceso sin token.
+Perfecto! El Guard está funcionando y rechaza acceso sin token.
 
 ---
 
@@ -1130,7 +1314,7 @@ curl -X GET http://localhost:3000/auth/profile \
 }
 ```
 
-**✅ Excelente!** El Guard validó el token y permitió el acceso.
+Excelente! El Guard validó el token y permitió el acceso.
 
 ---
 
@@ -1178,31 +1362,31 @@ curl -X POST http://localhost:3000/auth/register \
 }
 ```
 
-**✅ La validación funciona correctamente!**
+La validación funciona correctamente!
 
 ---
 
-# 🎉 ¡FELICIDADES!
+# FELICIDADES!
 
 Has creado una aplicación NestJS completa con:
 
-✅ Autenticación con JWT  
-✅ Guards personalizados  
-✅ Decoradores personalizados  
-✅ Validación de datos  
-✅ Hash de contraseñas  
-✅ Rutas públicas y protegidas  
+- Autenticación con JWT  
+- Guards personalizados  
+- Decoradores personalizados  
+- Validación de datos  
+- Hash de contraseñas  
+- Rutas públicas y protegidas  
 
 ---
 
-# 📚 CONCEPTOS APRENDIDOS
+# CONCEPTOS APRENDIDOS
 
 ## 1. JWT (JSON Web Token)
 
-**¿Qué es?**
+Qué es:
 Un token codificado que contiene información del usuario.
 
-**Estructura:**
+Estructura:
 ```
 eyJhbGc... (Header) . eyJzdWI... (Payload) . SflKxwR... (Signature)
 ```
@@ -1212,7 +1396,7 @@ eyJhbGc... (Header) . eyJzdWI... (Payload) . SflKxwR... (Signature)
 - Puede contener información del usuario
 - Verificable criptográficamente
 
-**Desventajas:**
+Desventajas:
 - No se puede invalidar antes de expirar
 - Si se roba, es válido hasta que expire
 
@@ -1220,22 +1404,22 @@ eyJhbGc... (Header) . eyJzdWI... (Payload) . SflKxwR... (Signature)
 
 ## 2. Guards
 
-**¿Qué son?**
+Qué son:
 Clases que determinan si una petición puede proceder.
 
-**Implementan:**
+Implementan:
 ```typescript
 interface CanActivate {
   canActivate(context: ExecutionContext): boolean | Promise<boolean>;
 }
 ```
 
-**Orden de ejecución:**
+Orden de ejecución:
 ```
 Middleware → Guards → Interceptors → Pipes → Controller → Service
 ```
 
-**Tipos:**
+Tipos:
 - **AuthGuard**: Verifica autenticación
 - **RolesGuard**: Verifica permisos
 - **ThrottlerGuard**: Rate limiting
@@ -1244,10 +1428,10 @@ Middleware → Guards → Interceptors → Pipes → Controller → Service
 
 ## 3. Decoradores
 
-**¿Qué son?**
+Qué son:
 Funciones que añaden metadata o modifican comportamiento.
 
-**Tipos en NestJS:**
+Tipos en NestJS:
 
 1. **Decoradores de clase:**
    ```typescript
@@ -1269,7 +1453,7 @@ Funciones que añaden metadata o modifican comportamiento.
    @GetUser()
    ```
 
-**Crear decorador personalizado:**
+Crear decorador personalizado:
 ```typescript
 export const MyDecorator = createParamDecorator(
   (data: unknown, ctx: ExecutionContext) => {
@@ -1282,15 +1466,15 @@ export const MyDecorator = createParamDecorator(
 
 ## 4. Passport Strategies
 
-**¿Qué son?**
+Qué son:
 Definen CÓMO autenticar (JWT, OAuth, Local, etc.)
 
-**Flujo:**
+Flujo:
 ```
 Request → Guard → Strategy.validate() → request.user → Controller
 ```
 
-**Estrategias comunes:**
+Estrategias comunes:
 - `passport-jwt`: Autenticación con JWT
 - `passport-local`: Usuario/contraseña
 - `passport-google-oauth20`: Login con Google
@@ -1300,7 +1484,7 @@ Request → Guard → Strategy.validate() → request.user → Controller
 
 ## 5. DTOs y Validación
 
-**¿Qué son los DTOs?**
+Qué son los DTOs:
 Data Transfer Objects - Definen la estructura de datos.
 
 **Ventajas:**
@@ -1309,7 +1493,7 @@ Data Transfer Objects - Definen la estructura de datos.
 - Type safety
 - Transformación de datos
 
-**Decoradores de validación:**
+Decoradores de validación:
 ```typescript
 @IsString()
 @IsEmail()
@@ -1321,7 +1505,7 @@ Data Transfer Objects - Definen la estructura de datos.
 
 ---
 
-# 🚀 PRÓXIMOS PASOS
+# PRÓXIMOS PASOS
 
 ## Mejoras que puedes implementar:
 
@@ -1374,7 +1558,7 @@ Login con redes sociales.
 
 ---
 
-# 📖 RECURSOS ADICIONALES
+# RECURSOS ADICIONALES
 
 ## Documentación Oficial
 - [NestJS Docs](https://docs.nestjs.com)
@@ -1393,48 +1577,48 @@ Login con redes sociales.
 
 ---
 
-# ❓ PREGUNTAS FRECUENTES
+# PREGUNTAS FRECUENTES
 
 ## ¿Por qué usar JWT en lugar de sesiones?
 
 **JWT (Stateless):**
-- ✅ Escalable (no requiere almacenamiento en servidor)
-- ✅ Funciona bien con microservicios
-- ✅ Mobile-friendly
-- ❌ No se puede invalidar fácilmente
-- ❌ Tamaño mayor que session ID
+- Escalable (no requiere almacenamiento en servidor)
+- Funciona bien con microservicios
+- Mobile-friendly
+- No se puede invalidar fácilmente
+- Tamaño mayor que session ID
 
 **Sesiones (Stateful):**
-- ✅ Se pueden invalidar inmediatamente
-- ✅ Menor tamaño
-- ❌ Requiere almacenamiento (Redis, DB)
-- ❌ Difícil de escalar
+- Se pueden invalidar inmediatamente
+- Menor tamaño
+- Requiere almacenamiento (Redis, DB)
+- Difícil de escalar
 
 ## ¿Es seguro almacenar el JWT en localStorage?
 
-**NO es la opción más segura** debido a XSS (Cross-Site Scripting).
+NO es la opción más segura debido a XSS (Cross-Site Scripting).
 
-**Opciones:**
+Opciones:
 1. **httpOnly Cookie** (más seguro)
 2. **localStorage** (vulnerable a XSS)
 3. **sessionStorage** (se pierde al cerrar tab)
 
-**Recomendación:** httpOnly Cookie + CSRF protection
+Recomendación: httpOnly Cookie + CSRF protection
 
 ## ¿Qué poner en el payload del JWT?
 
-**✅ SÍ incluir:**
+**SÍ incluir:**
 - User ID
 - Email
 - Roles
 - Información pública
 
-**❌ NO incluir:**
+**NO incluir:**
 - Contraseñas
 - Información sensible
 - Datos personales (SSN, tarjetas, etc.)
 
-**Recuerda:** El payload es decodificable (Base64), no encriptado.
+Recuerda: El payload es decodificable (Base64), no encriptado.
 
 ## ¿Cómo manejar tokens expirados?
 
@@ -1453,7 +1637,7 @@ Login con redes sociales.
 
 ---
 
-# 🎯 RESUMEN FINAL
+# RESUMEN FINAL
 
 ## Comandos usados:
 
@@ -1530,11 +1714,11 @@ src/
 
 ---
 
-**¡Felicidades por completar esta guía!** 🎉
+Felicidades por completar esta guía!
 
 Ahora tienes una base sólida para construir aplicaciones NestJS con autenticación profesional.
 
-**¿Siguiente paso?** Implementa una de las mejoras sugeridas y sigue aprendiendo.
+Siguiente paso: Implementa una de las mejoras sugeridas y sigue aprendiendo.
 
-**Happy coding!** 💻✨
+Happy coding!
 
